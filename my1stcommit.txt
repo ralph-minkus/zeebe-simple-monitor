@@ -4,3 +4,4 @@ Version 2
 Version 3 Friday Morning
 Version 4 im github.com
 Version 6 im github.com
+Version 7 im github.com nach dem delete des Masters
