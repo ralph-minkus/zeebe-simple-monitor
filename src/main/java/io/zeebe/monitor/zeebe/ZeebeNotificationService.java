@@ -1,5 +1,6 @@
 package io.zeebe.monitor.zeebe;
 
+import io.zeebe.monitor.rest.ui.ClusterHealthyNotification;
 import io.zeebe.monitor.rest.ui.ProcessInstanceNotification;
 import io.zeebe.monitor.rest.ui.ProcessInstanceNotification.Type;
 import io.zeebe.monitor.rest.ui.ZeebeClusterNotification;
@@ -21,20 +22,24 @@ public class ZeebeNotificationService {
 
   public void sendUpdatedProcessInstance(
       final long processInstanceKey, final long processDefinitionKey) {
-    sendNotification(createProcessInstanceNotification(processInstanceKey, processDefinitionKey, Type.UPDATED));
+    sendNotification(
+        createProcessInstanceNotification(processInstanceKey, processDefinitionKey, Type.UPDATED));
   }
 
   public void sendCreatedProcessInstance(
       final long processInstanceKey, final long processDefinitionKey) {
-    sendNotification(createProcessInstanceNotification(processInstanceKey, processDefinitionKey, Type.CREATED));
+    sendNotification(
+        createProcessInstanceNotification(processInstanceKey, processDefinitionKey, Type.CREATED));
   }
 
   public void sendEndedProcessInstance(
       final long processInstanceKey, final long processDefinitionKey) {
-    sendNotification(createProcessInstanceNotification(processInstanceKey, processDefinitionKey, Type.REMOVED));
+    sendNotification(
+        createProcessInstanceNotification(processInstanceKey, processDefinitionKey, Type.REMOVED));
   }
 
-  private ProcessInstanceNotification createProcessInstanceNotification(long processInstanceKey, long processDefinitionKey, Type type) {
+  private ProcessInstanceNotification createProcessInstanceNotification(
+      long processInstanceKey, long processDefinitionKey, Type type) {
     final ProcessInstanceNotification notification = new ProcessInstanceNotification();
     notification.setProcessInstanceKey(processInstanceKey);
     notification.setProcessDefinitionKey(processDefinitionKey);
@@ -57,5 +62,10 @@ public class ZeebeNotificationService {
   private void sendNotification(final ZeebeClusterNotification notification) {
     final var destination = basePath + "notifications/zeebe-cluster";
     webSocket.convertAndSend(destination, notification);
+  }
+
+  public void sendClusterStatusUpdate(ClusterHealthyNotification clusterStatus) {
+    final var destination = basePath + "notifications/zeebe-status";
+    webSocket.convertAndSend(destination, clusterStatus);
   }
 }

@@ -6,11 +6,11 @@ import io.zeebe.monitor.entity.ProcessInstanceEntity;
 import io.zeebe.monitor.repository.JobRepository;
 import io.zeebe.monitor.rest.dto.JobDto;
 import io.zeebe.monitor.rest.dto.ProcessInstanceDto;
+import jakarta.transaction.Transactional;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import javax.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -26,7 +26,7 @@ public class InstancesJobListViewController extends AbstractInstanceViewControll
   @GetMapping("/views/instances/{key}/job-list")
   @Transactional
   public String instanceDetailJobList(
-      @PathVariable final long key,
+      @PathVariable("key") final long key,
       final Map<String, Object> model,
       @PageableDefault(size = DETAIL_LIST_SIZE) final Pageable pageable) {
 

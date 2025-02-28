@@ -9,14 +9,30 @@
             New Deployment
         </button>
 
+        <form method="get" action="{{context-path}}views/processes">
+            <div class="form-inline">
+                <div class="form-group mb-2 col-sm-3">
+                    <label class="mx-sm-2" for="bpmn-search-input" >Search by</label>
+                    <input class="col-sm-9 form-control" id="bpmn-search-input" placeholder="BPMN process id (min 3 characters)" name="bpmnProcessId" type="text" title="BPMN process id (min 3 characters)" value="{{bpmnProcessId}}" />
+                </div>
+
+                <button class="btn btn-secondary mb-2" type="submit">Search</button>
+            </div>
+
+            <div class="form-group mb-2 col-sm-3">
+                <label class="form-check-label mx-sm-2" for="showOldProcessVersions" >Show old process versions</label>
+                <input class="mx-sm-2 btn-secondary"  id="showOldProcessVersions" name="showOldProcessVersions" type="checkbox" {{#showOldProcessVersions}}checked{{/showOldProcessVersions}}/>
+            </div>
+        </form>
     </div>
 
-    <div class="col-md-12">
+    <div class="col-md-12 border-top">
 
         <span>{{count}} process definitions</span>
 
         <table class="table table-striped">
             <thead>
+            <tr>
             <th>Process Definition Key</th>
             <th>BPMN process id</th>
             <th>Version</th>
@@ -25,8 +41,10 @@
             <th>Deployment Time
                 <a id="process-deployment-time" href="#" class="badge badge-secondary" data-toggle="tooltip" data-placement="top"
                    title="Sort by Deployment Time">
+                    <svg class="bi" width="12" height="12" fill="white"><use xlink:href="/img/bootstrap-icons.svg#caret-up-fill"/></svg>
                 </a>
             </th>
+            </tr>
             </thead>
 
             {{#processes}}

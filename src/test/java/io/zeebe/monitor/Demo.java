@@ -1,7 +1,6 @@
 package io.zeebe.monitor;
 
 import io.camunda.zeebe.client.ZeebeClient;
-
 import java.util.Collections;
 
 public class Demo {
@@ -11,7 +10,7 @@ public class Demo {
     final ZeebeClient client = ZeebeClient.newClientBuilder().usePlaintext().build();
 
     client
-        .newDeployCommand()
+        .newDeployResourceCommand()
         .addResourceFromClasspath("orderProcess.bpmn")
         .addResourceFromClasspath("ship-parcel.bpmn")
         .addResourceFromClasspath("payment.bpmn")

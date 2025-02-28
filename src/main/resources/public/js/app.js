@@ -1,3 +1,7 @@
+const IMAGE_ARROW_DOWN = '<svg class="bi" width="12" height="12" fill="white"><use xlink:href="/img/bootstrap-icons.svg#caret-down-fill"/></svg>';
+const IMAGE_ARROW_UP = '<svg class="bi" width="12" height="12" fill="white"><use xlink:href="/img/bootstrap-icons.svg#caret-up-fill"/></svg>';
+const IMAGE_LIGHTNING = '<svg class="bi" width="12" height="12" fill="white"><use xlink:href="/img/bootstrap-icons.svg#lightning-fill"/></svg>';
+
 /**
  * @typedef ErrorMessage
  * @type {object}
@@ -112,6 +116,9 @@ function connect() {
         stompClient.subscribe(buildPath('notifications/zeebe-cluster'), function (message) {
             handleZeebeClusterNotification(JSON.parse(message.body));
         });
+        stompClient.subscribe(buildPath('notifications/zeebe-status'), function (message) {
+            handleZeebeStatusNotification(JSON.parse(message.body));
+        });
     });
 }
 
@@ -145,6 +152,31 @@ function handleProcessInstanceNotification(notification) {
  */
 function handleZeebeClusterNotification(notification) {
     showError(notification.message)
+}
+
+/**
+ * @typedef ClusterHealthyNotification
+ * @type {object}
+ * @property {boolean} healthy
+ * @property {string} healthyString
+ */
+
+/**
+ * @param status {ClusterHealthyNotification}
+ */
+function handleZeebeStatusNotification(status) {
+    'use strict';
+    let $button = $("#button-show-status");
+    let oldHealthyString = $button.html().trim();
+    if (oldHealthyString !== status.healthyString) {
+        $button.html("Reload to update");
+        $button.removeClass("btn-outline-success");
+        $button.removeClass("btn-outline-danger");
+        $button.addClass("btn-outline-warning");
+        $button.click(function () {
+            location.reload();
+        });
+    }
 }
 
 function subscribeForProcessInstance(key) {
@@ -538,23 +570,6 @@ function getVariablesDocument() {
 
 // --------------------------------------------------------------------
 
-function loadDiagram(resource) {
-    viewer.importXML(resource, function (err) {
-        if (err) {
-            console.log('error rendering', err);
-            showError(err);
-        } else {
-            var canvas = viewer.get('canvas');
-
-            container.removeClass('with-error')
-                .addClass('with-diagram');
-
-            // zoom to fit full viewport
-            canvas.zoom('fit-viewport');
-        }
-    });
-}
-
 function addElementInstanceActiveMarker(canvas, elementId) {
     canvas.addMarker(elementId, 'bpmn-element-active');
 }
@@ -572,28 +587,33 @@ function removeElementSelectedMarker(elementId) {
 }
 
 function addElementInstanceCounter(overlays, elemenId, active, ended) {
-
     var style = ((active > 0) ? "bpmn-badge-active" : "bpmn-badge-inactive");
-
-    overlays.add(elemenId, {
-        position: {
-            top: -25,
-            left: 0
-        },
-        html: '<span class="' + style + '" data-toggle="tooltip" data-placement="bottom" title="active | ended">'
-            + active + ' | ' + ended
-            + '</span>'
-    });
+    try {
+        overlays.add(elemenId, 'note', {
+            position: {
+                top: -25,
+                left: 0
+            },
+            html: '<span class="' + style
+                + '" data-toggle="tooltip" data-placement="bottom" title="active | ended">'
+                + active + ' | ' + ended
+                + '</span>'
+        });
+    } catch (e) {
+        console.warn("Can't ad marker to element '"+elemenId+"',\n"
+            + "likely a known issue https://github.com/camunda-community-hub/zeebe-simple-monitor/issues/660\n"
+            + "error=" + e)
+    }
 }
 
 function addIncidentMarker(overlays, elemenId) {
-    overlays.add(elemenId, {
+    overlays.add(elemenId, 'note', {
         position: {
             top: -25,
             right: 10
         },
         html: '<span class="bpmn-badge-incident" data-toggle="tooltip" data-placement="bottom" title="incident">'
-            + "⚡"
+            + IMAGE_LIGHTNING
             + '</span>'
     });
 }
@@ -601,17 +621,13 @@ function addIncidentMarker(overlays, elemenId) {
 function markSequenceFlow(elementRegistry, graphicsFactory, flow) {
     var element = elementRegistry.get(flow);
     var gfx = elementRegistry.getGraphics(element);
-
     colorSequenceFlow(graphicsFactory, element, gfx, '#52b415');
 }
 
 function colorSequenceFlow(graphicsFactory, sequenceFlow, gfx, color) {
-    var businessObject = sequenceFlow.businessObject,
-        di = businessObject.di;
-
+    var di = sequenceFlow.di;
     di.set('stroke', color);
     di.set('fill', color);
-
     graphicsFactory.update('connection', sequenceFlow, gfx);
 }
 
@@ -645,25 +661,33 @@ function listPage(pageElement, page, size) {
     }
 }
 
-function listSort(sortProperty, sortElement) {
-    let sortAsc = "sort=" + sortProperty + ",asc"
-    let sortDesc = "sort=" + sortProperty + ",desc"
-
+function listSort(sortProperty, elementId) {
+    let sortAsc = "sort=" + sortProperty + ",asc";
+    let sortDesc = "sort=" + sortProperty + ",desc";
+    let elementNode = document.getElementById(elementId);
     let search = window.location.search
+    let sortParamRegEx = /sort=\w+,\w+/;
+
     if(search.includes(sortAsc)) {
-        let withReverseOrder = search.replace(sortAsc, sortDesc)
-        document.getElementById(sortElement).href = withReverseOrder
-        document.getElementById(sortElement).innerHTML = "▼"
+        let withReverseOrder = search.replace(sortAsc, sortDesc);
+        elementNode.href = withReverseOrder;
+        elementNode.innerHTML = IMAGE_ARROW_DOWN;
     } else if(search.includes(sortDesc)) {
-        let withReverseOrder = search.replace(sortDesc, sortAsc)
-        document.getElementById(sortElement).href = withReverseOrder
-        document.getElementById(sortElement).innerHTML = "▲"
+        let withReverseOrder = search.replace(sortDesc, sortAsc);
+        elementNode.href = withReverseOrder;
+        elementNode.innerHTML = IMAGE_ARROW_UP;
     } else if(search) {
-        document.getElementById(sortElement).href = search + "&" + sortDesc
-        document.getElementById(sortElement).innerHTML = "▼"
+        if (sortParamRegEx.test(window.location.search)) {
+            // sort param exists already and will be replaced
+            elementNode.href = search.replace(sortParamRegEx, sortDesc)
+        } else {
+            // no sort param exists and will be appended
+            elementNode.href = search + "&" + sortDesc;
+        }
+        elementNode.innerHTML = IMAGE_ARROW_DOWN;
     } else {
-        document.getElementById(sortElement).href = "?" + sortDesc
-        document.getElementById(sortElement).innerHTML = "▼"
+        elementNode.href = "?" + sortDesc;
+        elementNode.innerHTML = IMAGE_ARROW_UP;
     }
 }
 
@@ -706,7 +730,7 @@ function onBpmnDownloadClicked(){
 
 (function checkIfBpmnExistsOrDisableDownloadButton() {
     'use strict';
-    if (RAW_BPMN_RESOURCE === 'WARNING-NO-XML-RESOURCE-FOUND') {
+    if (typeof RAW_BPMN_RESOURCE !== 'undefined' && RAW_BPMN_RESOURCE === 'WARNING-NO-XML-RESOURCE-FOUND') {
         var link = $('#bpmnDownloadLink');
         link.attr('title', 'BPMN definition not found or broken :-( ');
         link.removeAttr('href');
@@ -717,3 +741,16 @@ function onBpmnDownloadClicked(){
 })();
 
 // --------------------------------------------------------------------
+
+/**
+ * Takes a value from the search query parameters and sets the value attribute for the specified element.
+ * @param elementId mandatory, the element's ID
+ * @param paramName mandatory, the name of the query parameter
+ */
+function bindQueryParamToElement(elementId, paramName) {
+    'use strict';
+    let params = new URLSearchParams(window.location.search)
+    if (params.get(paramName) !== null) {
+        document.getElementById(elementId).setAttribute("value", params.get(paramName))
+    }
+}

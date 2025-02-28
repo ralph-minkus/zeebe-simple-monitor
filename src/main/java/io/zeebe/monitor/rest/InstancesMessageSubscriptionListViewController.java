@@ -6,10 +6,10 @@ import io.zeebe.monitor.entity.ProcessInstanceEntity;
 import io.zeebe.monitor.repository.MessageSubscriptionRepository;
 import io.zeebe.monitor.rest.dto.MessageSubscriptionDto;
 import io.zeebe.monitor.rest.dto.ProcessInstanceDto;
+import jakarta.transaction.Transactional;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import javax.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -25,7 +25,7 @@ public class InstancesMessageSubscriptionListViewController extends AbstractInst
   @GetMapping("/views/instances/{key}/message-subscription-list")
   @Transactional
   public String instanceDetailMessageSubscriptionList(
-      @PathVariable final long key,
+      @PathVariable("key") final long key,
       final Map<String, Object> model,
       @PageableDefault(size = DETAIL_LIST_SIZE) final Pageable pageable) {
     initializeProcessInstanceDto(key, model, pageable);

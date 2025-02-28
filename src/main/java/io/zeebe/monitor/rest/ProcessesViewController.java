@@ -17,6 +17,7 @@ import io.zeebe.monitor.entity.MessageSubscriptionEntity;
 import io.zeebe.monitor.entity.ProcessEntity;
 import io.zeebe.monitor.entity.ProcessInstanceEntity;
 import io.zeebe.monitor.entity.TimerEntity;
+import io.zeebe.monitor.querydsl.ProcessEntityPredicatesBuilder;
 import io.zeebe.monitor.repository.MessageSubscriptionRepository;
 import io.zeebe.monitor.repository.ProcessInstanceRepository;
 import io.zeebe.monitor.repository.ProcessRepository;
@@ -27,20 +28,18 @@ import io.zeebe.monitor.rest.dto.MessageSubscriptionDto;
 import io.zeebe.monitor.rest.dto.ProcessDto;
 import io.zeebe.monitor.rest.dto.ProcessInstanceListDto;
 import io.zeebe.monitor.rest.dto.TimerDto;
+import jakarta.transaction.Transactional;
 import java.io.ByteArrayInputStream;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
-import javax.transaction.Transactional;
 import org.camunda.bpm.model.xml.instance.ModelElementInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 @Controller
@@ -52,31 +51,57 @@ public class ProcessesViewController extends AbstractViewController {
   static final List<String> EXCLUDE_ELEMENT_TYPES =
       List.of(BpmnElementType.MULTI_INSTANCE_BODY.name());
 
+  static final Sort DEFAULT_SORT =
+      Sort.by(Sort.Order.desc("bpmnProcessId"), Sort.Order.desc("timestamp"));
+
   @Autowired private ProcessRepository processRepository;
   @Autowired private ProcessInstanceRepository processInstanceRepository;
   @Autowired private MessageSubscriptionRepository messageSubscriptionRepository;
   @Autowired private TimerRepository timerRepository;
 
   @GetMapping("/")
+  @Transactional
   public String index(final Map<String, Object> model, final Pageable pageable) {
-    return processList(model, pageable);
+    return processList(model, pageable, Optional.empty(), true);
   }
 
   @GetMapping("/views/processes")
-  public String processList(final Map<String, Object> model, final Pageable pageable) {
-
-    final long count = processRepository.count();
-
-    final List<ProcessDto> processes = new ArrayList<>();
-    for (final ProcessEntity processEntity : processRepository.findAll(pageable)) {
-      final ProcessDto dto = toDto(processEntity);
-      processes.add(dto);
+  @Transactional
+  public String processList(
+      final Map<String, Object> model,
+      Pageable pageable,
+      @RequestParam(value = "bpmnProcessId", required = false) Optional<String> bpmnProcessId,
+      @RequestParam(value = "showOldProcessVersions", defaultValue = "false")
+          boolean showOldProcessVersions) {
+    if (!pageable.getSort().isSorted()) {
+      pageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), DEFAULT_SORT);
     }
 
-    model.put("processes", processes);
-    model.put("count", count);
+    var predicatesBuilder = new ProcessEntityPredicatesBuilder();
+    bpmnProcessId.filter(it -> it.length() >= 3).ifPresent(predicatesBuilder::withBpmnProcessId);
 
-    addPaginationToModel(model, pageable, count);
+    if (!showOldProcessVersions) {
+      var latestProcessKeys = processRepository.findLatestVersions();
+      predicatesBuilder.withKeys(latestProcessKeys);
+    }
+    var processesEntities = processRepository.findAll(predicatesBuilder.build(), pageable);
+
+    final List<ProcessDto> processes = new ArrayList<>();
+
+    processesEntities.forEach(
+        process -> {
+          final ProcessDto dto = toDto(process);
+          processes.add(dto);
+        });
+
+    var totalProcesses = processesEntities.getTotalElements();
+
+    model.put("processes", processes);
+    model.put("bpmnProcessId", bpmnProcessId.orElse(""));
+    model.put("showOldProcessVersions", showOldProcessVersions);
+    model.put("count", totalProcesses);
+
+    addPaginationToModel(model, pageable, totalProcesses);
     addDefaultAttributesToModel(model);
 
     return "process-list-view";
@@ -85,15 +110,23 @@ public class ProcessesViewController extends AbstractViewController {
   @GetMapping("/views/processes/{key}")
   @Transactional
   public String processDetail(
-      @PathVariable final long key, final Map<String, Object> model, final Pageable pageable) {
+      @PathVariable("key") final long key,
+      final Map<String, Object> model,
+      final Pageable pageable) {
 
     final ProcessEntity process =
         processRepository
             .findByKey(key)
             .orElseThrow(
                 () -> new ResponseStatusException(NOT_FOUND, "No process found with key: " + key));
-
     model.put("process", toDto(process));
+
+    final Optional<ProcessEntity> latest =
+        processRepository
+            .findByBpmnProcessIdContaining(process.getBpmnProcessId(), pageable)
+            .stream()
+            .max(Comparator.comparingInt(ProcessEntity::getVersion));
+    model.put("latestProcessDefinition", toDto(latest.orElse(process)));
     model.put("resource", getProcessResource(process));
 
     final List<ElementInstanceState> elementInstanceStates = getElementInstanceStates(key);
@@ -221,25 +254,23 @@ public class ProcessesViewController extends AbstractViewController {
                 Collectors.toMap(
                     ElementInstanceStatistics::getElementId, ElementInstanceStatistics::getCount));
 
-    final List<ElementInstanceState> elementInstanceStates =
-        elementEnteredStatistics.stream()
-            .map(
-                s -> {
-                  final ElementInstanceState state = new ElementInstanceState();
+    return elementEnteredStatistics.stream()
+        .map(
+            s -> {
+              final ElementInstanceState state = new ElementInstanceState();
 
-                  final String elementId = s.getElementId();
-                  state.setElementId(elementId);
+              final String elementId = s.getElementId();
+              state.setElementId(elementId);
 
-                  final long completedInstances = elementCompletedCount.getOrDefault(elementId, 0L);
-                  final long enteredInstances = s.getCount();
+              final long completedInstances = elementCompletedCount.getOrDefault(elementId, 0L);
+              final long enteredInstances = s.getCount();
 
-                  state.setActiveInstances(enteredInstances - completedInstances);
-                  state.setEndedInstances(completedInstances);
+              state.setActiveInstances(enteredInstances - completedInstances);
+              state.setEndedInstances(completedInstances);
 
-                  return state;
-                })
-            .collect(Collectors.toList());
-    return elementInstanceStates;
+              return state;
+            })
+        .collect(Collectors.toList());
   }
 
   static List<BpmnElementInfo> getBpmnElementInfos(final BpmnModelInstance bpmn) {
@@ -282,16 +313,17 @@ public class ProcessesViewController extends AbstractViewController {
                   .getEventDefinitions()
                   .forEach(
                       eventDefinition -> {
-                        if (eventDefinition instanceof ErrorEventDefinition) {
-                          final var errorEventDefinition = (ErrorEventDefinition) eventDefinition;
-                          final var errorCode = errorEventDefinition.getError().getErrorCode();
-
-                          info.setInfo("errorCode: " + errorCode);
+                        if (eventDefinition instanceof ErrorEventDefinition errorEventDefinition) {
+                          if (errorEventDefinition.getError() != null) {
+                            info.setInfo(
+                                "errorCode: " + errorEventDefinition.getError().getErrorCode());
+                          } else {
+                            info.setInfo("errorCode: <null>");
+                          }
                           infos.add(info);
                         }
 
-                        if (eventDefinition instanceof TimerEventDefinition) {
-                          final var timerEventDefinition = (TimerEventDefinition) eventDefinition;
+                        if (eventDefinition instanceof TimerEventDefinition timerEventDefinition) {
 
                           Optional.<ModelElementInstance>ofNullable(
                                   timerEventDefinition.getTimeCycle())
